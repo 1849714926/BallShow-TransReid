@@ -6,3 +6,5 @@ outputs/
 
 # 忽略预训练模型文件夹
 pretrained/
+
+logs/
