@@ -288,80 +288,12 @@ class PatchEmbed_overlap(nn.Module):
         return x
 
 
-class IBN(nn.Module):
-    def __init__(self, planes):
-        super(IBN, self).__init__()
-        half1 = int(planes/2)
-        self.half = half1
-        half2 = planes - half1
-        self.IN = nn.InstanceNorm2d(half1, affine=True)
-        self.BN = nn.BatchNorm2d(half2)
-
-    def forward(self, x):
-        split = torch.split(x, self.half, 1)
-        out1 = self.IN(split[0].contiguous())
-        out2 = self.BN(split[1].contiguous())
-        out = torch.cat((out1, out2), 1)
-        return out
-
-
-class PatchEmbed_VOLO(nn.Module):
-    """
-    Image to Patch Embedding.
-    Different with ViT use 1 conv layer, we use 4 conv layers to do patch embedding
-    """
-
-    def __init__(self, img_size=224, stem_conv=False, stem_stride=1,
-                 patch_size=8, in_chans=3, hidden_dim=64, embed_dim=384):
-        super().__init__()
-        assert patch_size in [4, 8, 16]
-        img_size = to_2tuple(img_size)
-        self.num_x = img_size[1] // patch_size
-        self.num_y = img_size[0] // patch_size
-        self.num_patches = self.num_x * self.num_y
-        self.img_size = img_size
-        self.patch_size = patch_size
-
-        self.stem_conv = stem_conv
-        if stem_conv:
-            self.conv = nn.Sequential(
-                nn.Conv2d(in_chans, hidden_dim, kernel_size=7, stride=stem_stride,
-                          padding=3, bias=False),  # 112x112
-                IBN(hidden_dim),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, stride=1,
-                          padding=1, bias=False),  # 112x112
-                IBN(hidden_dim),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, stride=1,
-                          padding=1, bias=False),  # 112x112
-                nn.BatchNorm2d(hidden_dim),
-                nn.ReLU(inplace=True),
-            )
-
-        self.proj = nn.Conv2d(hidden_dim,
-                              embed_dim,
-                              kernel_size=patch_size // stem_stride,
-                              stride=patch_size // stem_stride)
-        self.num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
-        self.img_size = img_size
-        self.patch_size = patch_size
-
-    def forward(self, x):
-        if self.stem_conv:
-            x = self.conv(x)
-        x = self.proj(x)  # B, C, H, W
-        x = x.flatten(2).permute(0,2,1)
-        return x
-
-
 class TransReID(nn.Module):
     """ Transformer-based Object Re-Identification
     """
     def __init__(self, img_size=224, patch_size=16, stride_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., camera=0, view=0,
-                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu=1.0,
-                 conv_stem=True):  # 新增 conv_stem 参数，默认使用基于 IBN 的卷积 stem
+                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
@@ -370,19 +302,9 @@ class TransReID(nn.Module):
             self.patch_embed = HybridEmbed(
                 hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
         else:
-            if conv_stem:
-                # 使用新的基于 IBN 的卷积 patch embedding
-                self.patch_embed = PatchEmbed_VOLO(
-                    img_size=img_size, stem_conv=True, stem_stride=2,
-                    patch_size=patch_size, in_chans=in_chans,
-                    hidden_dim=64, embed_dim=embed_dim)
-                print('Using convolution stem (IBN)')
-            else:
-                # 保留原始的重叠 patch embedding
-                self.patch_embed = PatchEmbed_overlap(
-                    img_size=img_size, patch_size=patch_size, stride_size=stride_size, in_chans=in_chans,
-                    embed_dim=embed_dim)
-                print('Using standard patch embedding (overlap)')
+            self.patch_embed = PatchEmbed_overlap(
+                img_size=img_size, patch_size=patch_size, stride_size=stride_size, in_chans=in_chans,
+                embed_dim=embed_dim)
 
         num_patches = self.patch_embed.num_patches
 
@@ -528,26 +450,29 @@ def resize_pos_embed(posemb, posemb_new, hight, width):
     return posemb
 
 
-def vit_base_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_rate=0.0, attn_drop_rate=0.0, drop_path_rate=0.1, camera=0, view=0,local_feature=False,sie_xishu=1.5, conv_stem=True, **kwargs):
+def vit_base_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_rate=0.0, attn_drop_rate=0.0, drop_path_rate=0.1, camera=0, view=0,local_feature=False,sie_xishu=1.5, **kwargs):
     model = TransReID(
         img_size=img_size, patch_size=16, stride_size=stride_size, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,\
         camera=camera, view=view, drop_path_rate=drop_path_rate, drop_rate=drop_rate, attn_drop_rate=attn_drop_rate,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), sie_xishu=sie_xishu, local_feature=local_feature, conv_stem=conv_stem, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6),  sie_xishu=sie_xishu, local_feature=local_feature, **kwargs)
+
     return model
 
-def vit_small_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_rate=0., attn_drop_rate=0.,drop_path_rate=0.1, camera=0, view=0, local_feature=False, sie_xishu=1.5, conv_stem=True, **kwargs):
+def vit_small_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_rate=0., attn_drop_rate=0.,drop_path_rate=0.1, camera=0, view=0, local_feature=False, sie_xishu=1.5, **kwargs):
     kwargs.setdefault('qk_scale', 768 ** -0.5)
     model = TransReID(
         img_size=img_size, patch_size=16, stride_size=stride_size, embed_dim=768, depth=8, num_heads=8,  mlp_ratio=3., qkv_bias=False, drop_path_rate = drop_path_rate,\
         camera=camera, view=view,  drop_rate=drop_rate, attn_drop_rate=attn_drop_rate,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), sie_xishu=sie_xishu, local_feature=local_feature, conv_stem=conv_stem, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6),  sie_xishu=sie_xishu, local_feature=local_feature, **kwargs)
+
     return model
 
-def deit_small_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_path_rate=0.1, drop_rate=0.0, attn_drop_rate=0.0, camera=0, view=0, local_feature=False, sie_xishu=1.5, conv_stem=True, **kwargs):
+def deit_small_patch16_224_TransReID(img_size=(256, 128), stride_size=16, drop_path_rate=0.1, drop_rate=0.0, attn_drop_rate=0.0, camera=0, view=0, local_feature=False, sie_xishu=1.5, **kwargs):
     model = TransReID(
         img_size=img_size, patch_size=16, stride_size=stride_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
         drop_path_rate=drop_path_rate, drop_rate=drop_rate, attn_drop_rate=attn_drop_rate, camera=camera, view=view, sie_xishu=sie_xishu, local_feature=local_feature,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), conv_stem=conv_stem, **kwargs)
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+
     return model
 
 

@@ -1,12 +1,12 @@
 MODEL:
   PRETRAIN_CHOICE: 'imagenet'
-  PRETRAIN_PATH: '/home/qwe/Desktop/guo/TransReID-ballshow-s2ft_stride256_sie3_ls_lr4e3_re05-clean/pretrained/vit_base_ics_cfs_lup.pth'  # 预训练权重路径
+  PRETRAIN_PATH: '/home/qwe/Desktop/guo/TransReID-ballshow-s2ft_stride256_sie3_ls_lr4e3_re05-clean/pretrained/jx_vit_base_p16_224-80ecf9dd.pth'  # 预训练权重路径
   METRIC_LOSS_TYPE: 'triplet'
   IF_LABELSMOOTH: 'off'
   IF_WITH_CENTER: 'no'
   NAME: 'transformer'
   NO_MARGIN: True
-  DEVICE_ID: ('0')
+  DEVICE_ID: ('1')
   TRANSFORMER_TYPE: 'vit_base_patch16_224_TransReID'
   STRIDE_SIZE: [12, 12]
   SIE_CAMERA: True
